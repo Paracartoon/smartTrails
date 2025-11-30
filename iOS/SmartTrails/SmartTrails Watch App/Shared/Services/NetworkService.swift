@@ -7,8 +7,6 @@
 
 import Foundation
 
-// MARK: - Network Errors
-
 enum NetworkError: Error, LocalizedError {
    case invalidURL
     case networkFailure(Error)
@@ -32,13 +30,10 @@ enum NetworkError: Error, LocalizedError {
     }
 }
 
-// MARK: - Network Service
-
 final class NetworkService {
    static let shared = NetworkService()
 
-    // TODO: Replace with actual API endpoint
-    private let baseURL = "https://api.example.com"
+    private let baseURL = "https://smart-trails.com/api/v1"
 
    private let decoder: JSONDecoder = {
         let decoder = JSONDecoder()
@@ -50,61 +45,28 @@ final class NetworkService {
 
    // MARK: - Public API
 
-    /// Fetches station data from the API
-    /// Currently returns mock data for development
     func fetchStationData(stationId: String = "mombarone-san-carlo") async throws -> StationData {
-        // TODO: Replace with actual API call when endpoint is ready
-       // Simulate network delay
-        try await Task.sleep(nanoseconds: 1_000_000_000) // 1 second delay
+        guard let url = URL(string: "\(baseURL)/stations/\(stationId)/data/") else {
+            throw NetworkError.invalidURL
+        }
 
-        return Self.mockStationData
+        var request = URLRequest(url: url)
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+
+       let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw NetworkError.noData
+        }
+
+       guard (200...299).contains(httpResponse.statusCode) else {
+            throw NetworkError.serverError(statusCode: httpResponse.statusCode)
+        }
+
+        do {
+            return try decoder.decode(StationData.self, from: data)
+        } catch {
+           throw NetworkError.decodingError(error)
+        }
     }
-
-   // MARK: - Mock Data
-
-    static let mockStationData = StationData(
-        stationId: "mombarone-san-carlo",
-        timestamp: Date(),
-        location: Location(
-           latitude: 45.5615,
-            longitude: 8.0573,
-            altitude: 1250,
-            trailName: "Sentiero Graglia"
-        ),
-        sensors: Sensors(
-           atmospheric: Atmospheric(
-                temperature: 12.5,
-                temperatureIsDangerous: false,
-                humidity: 65.0,
-                humidityIsDangerous: false,
-               pressure: 875.3,
-                pressureIsDangerous: false
-            ),
-            light: Light(
-                uvIndex: 3.2,
-               uvIndexIsDangerous: false,
-                lux: 45000,
-                luxIsDangerous: false
-            ),
-            soil: Soil(
-                moisturePercent: 45.5,
-               moisturePercentIsDangerous: false
-            ),
-            airQuality: AirQuality(
-                co2Ppm: 420,
-                co2PpmIsDangerous: false
-            ),
-           precipitation: Precipitation(
-                isRaining: false,
-                isRainingIsDangerous: false,
-                rainDetectedLastHour: true,
-                rainDetectedLastHourIsDangerous: false
-            ),
-           trailActivity: TrailActivity(
-                motionCount: 12,
-                motionCountIsDangerous: false,
-                periodMinutes: 60
-            )
-        )
-    )
 }

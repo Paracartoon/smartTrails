@@ -67,7 +67,4 @@ struct StationHeaderView: View {
     }
 }
 
-#Preview {
-   StationHeaderView(data: NetworkService.mockStationData)
-        .padding()
-}
+

@@ -191,5 +191,77 @@ def health_check(request):
         'message': 'SmartTrails API is running'
     })
 
+
+@api_view(['GET'])
+def get_station_data(request, station_id):
+    """
+    GET /api/v1/stations/<station_id>/data
+
+    Returns latest sensor readings
+    """
+    try:
+        station = Station.objects.get(station_id=station_id)
+    except Station.DoesNotExist:
+        return Response({
+            'status': 'error',
+            'message': f'Station {station_id} not found'
+        }, status=status.HTTP_404_NOT_FOUND)
+
+    atmospheric = station.atmospheric_readings.first()
+    light = station.light_readings.first()
+    soil = station.soil_readings.first()
+    air_quality = station.air_quality_readings.first()
+    precipitation = station.precipitation_readings.first()
+    trail_activity = station.trail_activity_readings.first()
+
+    response_data = {
+        'station_id': station.station_id,
+        'timestamp': timezone.now().isoformat(),
+        'location': {
+            'latitude': float(station.latitude),
+            'longitude': float(station.longitude),
+            'altitude': station.altitude,
+            'trail_name': station.trail_name or station.name
+        },
+        'sensors': {
+            'atmospheric': {
+                'temperature': float(atmospheric.temperature) if atmospheric and atmospheric.temperature else 0.0,
+                'temperature_is_dangerous': False,
+                'humidity': float(atmospheric.humidity) if atmospheric and atmospheric.humidity else 0.0,
+                'humidity_is_dangerous': False,
+                'pressure': float(atmospheric.pressure) if atmospheric and atmospheric.pressure else 0.0,
+                'pressure_is_dangerous': False
+            },
+            'light': {
+                'uv_index': float(light.uv_index) if light and light.uv_index else 0.0,
+                'uv_index_is_dangerous': False,
+                'lux': light.lux if light and light.lux else 0,
+                'lux_is_dangerous': False
+            },
+            'soil': {
+                'moisture_percent': float(soil.moisture_percent) if soil and soil.moisture_percent else 0.0,
+                'moisture_percent_is_dangerous': False
+            },
+            'air_quality': {
+                'co2_ppm': air_quality.co2_ppm if air_quality and air_quality.co2_ppm else 0,
+                'co2_ppm_is_dangerous': False
+            },
+            'precipitation': {
+                'is_raining': precipitation.is_raining if precipitation else False,
+                'is_raining_is_dangerous': False,
+                'rain_detected_last_hour': precipitation.rain_detected_last_hour if precipitation else False,
+                'rain_detected_last_hour_is_dangerous': False
+            },
+            'trail_activity': {
+                'motion_count': trail_activity.motion_count if trail_activity and trail_activity.motion_count else 0,
+                'motion_count_is_dangerous': False,
+                'period_minutes': trail_activity.period_minutes if trail_activity and trail_activity.period_minutes else 60
+            }
+        }
+    }
+
+    return Response(response_data)
+
+
 def index(request):
     return render(request, 'index.html')

@@ -135,6 +135,10 @@ struct WatchDashboardView: View {
             Text("\(Int(data.location.altitude))m")
                 .font(.caption2)
                 .foregroundColor(WatchTheme.textOnColorSecondary)
+
+            Text(data.timestamp, style: .relative)
+                .font(.caption2)
+               .foregroundColor(WatchTheme.textOnColorSecondary)
         }
        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 6)
