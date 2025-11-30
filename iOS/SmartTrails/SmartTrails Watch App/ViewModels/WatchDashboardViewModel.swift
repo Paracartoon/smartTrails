@@ -59,7 +59,12 @@ final class WatchDashboardViewModel: ObservableObject {
         print("Set err to nil _______")
         error = nil
 
-        await fetchData()
+        await withCheckedContinuation { continuation in
+            Task {
+                await fetchData()
+                continuation.resume()
+            }
+        }
 
        isRefreshing = false
     }
