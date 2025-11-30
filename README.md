@@ -1,88 +1,158 @@
-# PIR Motion Sensor with Cellular Data Transmission
+# SmartTrails
 
-Arduino-based motion detection system using PIR sensor and NB-IoT cellular connectivity for remote environmental monitoring.
+End-to-end trail monitoring system with Arduino sensors, Django backend, and native iOS/watchOS apps.
 
-## Hardware
-
-- **Arduino Portenta H7**
-- **Arduino Portenta Cat.M1/NB-IoT GNSS Shield**
-- **PIR Motion Sensor** (HC-SR501 or similar)
-- **Cellular antenna**
-- **NB-IoT SIM card**
-
-## Features
-
-- Motion detection using PIR sensor
-- 30-second PIR stabilization period on startup
-- Cellular connectivity via NB-IoT (Cat-M1/NB-IoT)
-- HTTP POST requests to REST API
-- JSON payload with motion events and timestamps
-- Automatic DNS resolution
-- Network stability checks before transmission
-
-## Hardware Connections
+## Architecture
 
 ```
-PIR Sensor → Arduino Portenta H7
-- VCC → 5V
-- GND → GND  
-- OUT → A0
-
-Cellular Shield
-- Mounted on Portenta H7 high-density connectors
-- Antenna connected to shield's antenna port
-- SIM card inserted in shield's SIM slot
+┌─────────────┐      HTTP POST       ┌─────────────┐      HTTP GET       ┌─────────────┐
+│   Arduino   │  ─────────────────►  │   Django    │  ◄───────────────   │  iOS App    │
+│   Sensors   │    sensor data       │   Backend   │    station data     │  watchOS    │
+└─────────────┘                      └─────────────┘                     └─────────────┘
+                                           │
+                                           ▼
+                                     ┌───────────┐
+                                     │PostgreSQL │
+                                     │    DB     │
+                                     └───────────┘
 ```
 
-## Setup
+## Components
 
-1. **Install Arduino IDE** and required libraries:
-   - Arduino Mbed OS Portenta Boards
-   - GSM library (included in Mbed core)
+### Arduino (`/Arduino`)
 
-2. **Configure SIM credentials:**
-   - Copy `arduino_secrets.h` 
-   - Fill in your SIM PIN, APN, username, and password
+Arduino-based sensor station using Portenta H7 with NB-IoT cellular connectivity.
 
-3. **Upload code:**
-   - Connect Portenta H7 via USB
-   - Select board: Tools → Board → Arduino Portenta H7 (M7 core)
-   - Upload the sketch
+**Hardware:**
+- Arduino Portenta H7
+- Arduino Portenta Cat.M1/NB-IoT GNSS Shield
+- PIR Motion Sensor (HC-SR501)
+- Cellular antenna + NB-IoT SIM
 
-4. **Monitor serial output:**
-   - Open Serial Monitor at 9600 baud
-   - Watch for network connection and motion detection events
+**Sensors collected:**
+- Temperature, humidity, pressure (atmospheric)
+- UV index, light intensity (lux)
+- Soil moisture
+- CO2 levels (air quality)
+- Rain detection
+- Trail activity (PIR motion count)
 
-## API Endpoint
+### Django Backend (`/django`)
 
-Current configuration sends data to: `http://api.restful-api.dev/objects`
+REST API for receiving sensor data from Arduino and serving it to mobile apps.
 
-Modify `server` and `port` constants to use your own API endpoint.
+**Apps:**
+- `stations` - Station metadata (location, altitude, trail name)
+- `sensors` - Sensor reading models (6 separate tables)
+- `api` - REST endpoints
 
-### JSON Payload Format
+**Endpoints:**
+- `POST /api/v1/sensors/data/` - Receive sensor data from Arduino
+- `GET /api/v1/stations/<station_id>/data/` - Get latest readings for mobile apps
+- `GET /api/v1/health/` - Health check
+
+### iOS App (`/iOS/SmartTrails`)
+
+Native SwiftUI app displaying real-time trail conditions.
+
+**Features:**
+- Dashboard with all sensor readings
+- Color-coded sections (atmospheric, light, soil, air quality, precipitation, trail activity)
+- Pull-to-refresh
+- Auto-refresh every 5 minutes***
+- Danger indicators for hazardous conditions
+
+**Requirements:**
+- iOS 17+
+- Xcode 15+
+
+### watchOS App (`/iOS/SmartTrails Watch App`)
+
+Companion Apple Watch app with the same sensor data.
+
+**Features:**
+- Compact dashboard optimized for watch
+- Digital Crown refresh
+- Black background for OLED
+- Relative timestamp display
+
+**Requirements:**
+- watchOS 10+
+
+
+## API Response Format
 
 ```json
 {
-  "name": "PIR Motion Sensor",
-  "data": {
-    "motion": true,
-    "timestamp": "246300"
+  "station_id": "mombarone-san-carlo",
+  "timestamp": "2024-11-30T17:30:00Z",
+  "location": {
+    "latitude": 45.5615,
+    "longitude": 8.0573,
+    "altitude": 1250,
+    "trail_name": "Sentiero Graglia"
+  },
+  "sensors": {
+    "atmospheric": {
+      "temperature": 12.5,
+      "temperature_is_dangerous": false,
+      "humidity": 65.0,
+      "humidity_is_dangerous": false,
+      "pressure": 875.3,
+      "pressure_is_dangerous": false
+    },
+    "light": {
+      "uv_index": 3.2,
+      "uv_index_is_dangerous": false,
+      "lux": 45000,
+      "lux_is_dangerous": false
+    },
+    "soil": {
+      "moisture_percent": 45.5,
+      "moisture_percent_is_dangerous": false
+    },
+    "air_quality": {
+      "co2_ppm": 420,
+      "co2_ppm_is_dangerous": false
+    },
+    "precipitation": {
+      "is_raining": false,
+      "is_raining_is_dangerous": false,
+      "rain_detected_last_hour": true,
+      "rain_detected_last_hour_is_dangerous": false
+    },
+    "trail_activity": {
+      "motion_count": 12,
+      "motion_count_is_dangerous": false,
+      "period_minutes": 60
+    }
   }
 }
 ```
 
-## Troubleshooting
+## Project Structure
 
-See [TECHNICAL_REPORT.md](TECHNICAL_REPORT.md) for detailed debugging information and lessons learned.
-
-## Power Considerations
-
-⚠️ **Important:** PIR sensor requires 5V power from Portenta's 5V pin. Do not use 3.3V - it will cause false readings.
-
-## Future Enhancements
-
-- Deep sleep mode for battery operation
-- Temperature sensor integration
-- GPS coordinates in payload
-- Local logging to SD card
-- Battery voltage monitoring
+```
+smartTrails/
+├── Arduino/
+│   └── GSMClient/
+│       └── GSMClient.ino
+├── django/
+│   └── smart_trails/
+│       ├── api/              # REST endpoints
+│       ├── sensors/          # Sensor reading models
+│       ├── stations/         # Station metadata
+│       └── smart_trails/     # Django settings
+└── iOS/
+    └── SmartTrails/
+        ├── SmartTrails/              # iOS app
+        │   ├── Views/
+        │   ├── ViewModels/
+        │   ├── Models/
+        │   └── Services/
+        └── SmartTrails Watch App/    # watchOS app
+            ├── Views/
+            ├── ViewModels/
+            ├── Models/
+            └── Services/
+```
