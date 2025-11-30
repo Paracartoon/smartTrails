@@ -48,12 +48,21 @@ final class DashboardViewModel: ObservableObject {
 
    /// Manual refresh via pull-to-refresh
     func refresh() async {
-        guard !isRefreshing else { return }
+        print("REFRESH CALLED")
+        guard !isRefreshing else {
+            print("Already refreshing, skipping")
+            return
+        }
 
         isRefreshing = true
         error = nil
 
-        await fetchData()
+        await withCheckedContinuation { continuation in
+            Task {
+                await fetchData()
+                continuation.resume()
+            }
+        }
 
         isRefreshing = false
     }
@@ -79,13 +88,17 @@ final class DashboardViewModel: ObservableObject {
 
     private func fetchData() async {
        do {
-           stationData = try await networkService.fetchStationData()
+            let newData = try await networkService.fetchStationData()
+            print("1 -->>> Fetched data with timestamp", newData.timestamp)
+           stationData = newData
             error = nil
 
         } catch let networkError as NetworkError {
+            print("Fetch error: \(networkError)")
             self.error = networkError
 
        } catch {
+            print("Fetch error: \(error)")
             self.error = .networkFailure(error)
         }
     }

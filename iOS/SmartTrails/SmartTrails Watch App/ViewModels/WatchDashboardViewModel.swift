@@ -49,7 +49,11 @@ final class WatchDashboardViewModel: ObservableObject {
     }
 
     func refresh() async {
-        guard !isRefreshing else { return }
+        print("REFRESH CALLED")
+        guard !isRefreshing else {
+            print("Already refreshing, skipping")
+            return
+        }
 
         isRefreshing = true
         print("Set err to nil _______")
@@ -80,7 +84,9 @@ final class WatchDashboardViewModel: ObservableObject {
 
     private func fetchData() async {
         do {
-          stationData = try await networkService.fetchStationData()
+            let newData = try await networkService.fetchStationData()
+            print(" -->>> Fetched data with timestamp", newData.timestamp, "FETCH")
+          stationData = newData
             error = nil
         } catch let networkError as NetworkError {
             print("Set err to actual error _______", networkError)
