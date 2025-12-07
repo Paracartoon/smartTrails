@@ -8,7 +8,9 @@
 import SwiftUI
 
 struct DashboardView: View {
-   @EnvironmentObject var viewModel: DashboardViewModel
+    @EnvironmentObject var viewModel: DashboardViewModel
+    @ObservedObject private var notificationService = NotificationService.shared
+    @State private var showNotifications = false
 
     var body: some View {
         NavigationStack {
@@ -126,6 +128,43 @@ struct DashboardView: View {
             }
             .navigationTitle("SmartTrails")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    notificationBellButton
+                }
+            }
+            .navigationDestination(isPresented: $showNotifications) {
+                NotificationsView()
+            }
+            .onChange(of: notificationService.shouldNavigateToNotifications) { _, shouldNavigate in
+                if shouldNavigate {
+                    showNotifications = true
+                    notificationService.shouldNavigateToNotifications = false
+                }
+            }
+        }
+    }
+
+    private var notificationBellButton: some View {
+        Button {
+            showNotifications = true
+        } label: {
+            ZStack(alignment: .topTrailing) {
+                Image(systemName: "bell.fill")
+                    .font(.system(size: 18))
+                    .foregroundColor(Theme.textPrimary)
+
+                if notificationService.unreadCount > 0 {
+                    Text(notificationService.unreadCount > 99 ? "99+" : "\(notificationService.unreadCount)")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(Theme.danger)
+                        .clipShape(Capsule())
+                        .offset(x: 8, y: -8)
+                }
+            }
         }
     }
 

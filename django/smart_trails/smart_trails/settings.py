@@ -39,6 +39,7 @@ INSTALLED_APPS = [
     'stations',
     'sensors',
     'api',
+    'notifications',
 ]
 
 MIDDLEWARE = [
@@ -134,3 +135,9 @@ REST_FRAMEWORK = {
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 100,
 }
+
+# APNs Configuration
+APNS_KEY_PATH = BASE_DIR / 'AuthKey_C4W667JPTB.p8'
+APNS_KEY_ID = 'C4W667JPTB'
+APNS_TEAM_ID = 'E6S8B2D4E8'
+APNS_USE_SANDBOX = True

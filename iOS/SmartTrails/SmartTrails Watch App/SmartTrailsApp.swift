@@ -6,25 +6,38 @@
 //
 
 import SwiftUI
+import UserNotifications
 
 @main
 struct SmartTrails_Watch_AppApp: App {
-   @StateObject private var viewModel = WatchDashboardViewModel()
-
+    @WKApplicationDelegateAdaptor(WatchAppDelegate.self) var appDelegate
+    @StateObject private var viewModel = WatchDashboardViewModel()
 
     var body: some Scene {
         WindowGroup {
-          Group {
+            Group {
                 if viewModel.isLoading {
-                    // white?
-                   WatchLoadingView()
+                    WatchLoadingView()
                         .task {
                             await viewModel.loadInitialData()
+                            requestNotificationPermission()
                         }
                 } else {
                     WatchDashboardView()
-                      .environmentObject(viewModel)
+                        .environmentObject(viewModel)
                 }
+            }
+        }
+    }
+
+    func requestNotificationPermission() {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { granted, error in
+            if granted {
+                DispatchQueue.main.async {
+                    WKApplication.shared().registerForRemoteNotifications()
+                }
+            } else if let error = error {
+                print("❌ Watch notification permission denied: \(error)")
             }
         }
     }
