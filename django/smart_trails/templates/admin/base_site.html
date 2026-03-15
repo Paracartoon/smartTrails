@@ -1,0 +1,8 @@
+{% extends "admin/base.html" %}
+
+{% block branding %}
+<h1 id="site-name">
+    <a href="{% url 'admin:index' %}">SmartTrails Admin</a>
+    <a href="{% url 'sensor_dashboard' %}" style="font-size: 14px; margin-left: 20px; color: #81d4fa;">📊 Sensor Dashboard</a>
+</h1>
+{% endblock %}

@@ -18,6 +18,7 @@ from sensors.models import (
     PrecipitationReading,
     TrailActivityReading
 )
+from notifications.alert_system import alert_analyzer
 
 
 @api_view(['POST'])
@@ -90,15 +91,8 @@ def receive_sensor_data(request):
             }
         )
         
-        timestamp = parse_datetime(data['timestamp'])
-        if not timestamp:
-            return Response({
-                'status': 'error',
-                'message': 'Invalid timestamp format. Use ISO format: 2024-11-22T14:30:00Z'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        if timezone.is_naive(timestamp):
-            timestamp = timezone.make_aware(timestamp)
+        # Use server time instead of Arduino's timestamp (Arduino doesn't have RTC)
+        timestamp = timezone.now()
         
         sensors = data.get('sensors', {})
         
@@ -197,7 +191,7 @@ def get_station_data(request, station_id):
     """
     GET /api/v1/stations/<station_id>/data
 
-    Returns latest sensor readings
+    Returns latest sensor readings with danger flags from AlertAnalyzer.
     """
     try:
         station = Station.objects.get(station_id=station_id)
@@ -214,6 +208,48 @@ def get_station_data(request, station_id):
     precipitation = station.precipitation_readings.first()
     trail_activity = station.trail_activity_readings.first()
 
+    # Extract raw values
+    temp = float(atmospheric.temperature) if atmospheric and atmospheric.temperature else None
+    humidity = float(atmospheric.humidity) if atmospheric and atmospheric.humidity else None
+    pressure = float(atmospheric.pressure) if atmospheric and atmospheric.pressure else None
+    uv = float(light.uv_index) if light and light.uv_index else None
+    lux = light.lux if light and light.lux else None
+    moisture = float(soil.moisture_percent) if soil and soil.moisture_percent else None
+    co2 = air_quality.co2_ppm if air_quality and air_quality.co2_ppm else None
+    is_raining = precipitation.is_raining if precipitation else False
+    rain_recent = precipitation.rain_detected_last_hour if precipitation else False
+    motion = trail_activity.motion_count if trail_activity and trail_activity.motion_count else 0
+    period = trail_activity.period_minutes if trail_activity and trail_activity.period_minutes else 60
+
+    # Build sensor data dict for AlertAnalyzer
+    sensor_data = {
+        'atmospheric': {
+            'temperature': temp,
+            'humidity': humidity,
+            'pressure': pressure,
+        },
+        'light': {
+            'uv_index': uv,
+            'lux': lux,
+        },
+        'soil': {
+            'moisture_percent': moisture,
+        },
+        'air_quality': {
+            'co2_ppm': co2,
+        },
+        'precipitation': {
+            'is_raining': is_raining,
+            'rain_detected_last_hour': rain_recent,
+        },
+        'trail_activity': {
+            'motion_count': motion,
+        },
+    }
+
+    # Get danger flags from AlertAnalyzer
+    flags = alert_analyzer.get_is_dangerous_flags(sensor_data)
+
     response_data = {
         'station_id': station.station_id,
         'timestamp': timezone.now().isoformat(),
@@ -225,39 +261,39 @@ def get_station_data(request, station_id):
         },
         'sensors': {
             'atmospheric': {
-                'temperature': float(atmospheric.temperature) if atmospheric and atmospheric.temperature else 0.0,
-                'temperature_is_dangerous': False,
-                'humidity': float(atmospheric.humidity) if atmospheric and atmospheric.humidity else 0.0,
-                'humidity_is_dangerous': False,
-                'pressure': float(atmospheric.pressure) if atmospheric and atmospheric.pressure else 0.0,
-                'pressure_is_dangerous': False
+                'temperature': temp if temp is not None else 0.0,
+                'temperature_is_dangerous': flags['temperature_is_dangerous'],
+                'humidity': humidity if humidity is not None else 0.0,
+                'humidity_is_dangerous': flags['humidity_is_dangerous'],
+                'pressure': pressure if pressure is not None else 0.0,
+                'pressure_is_dangerous': flags['pressure_is_dangerous'],
             },
             'light': {
-                'uv_index': float(light.uv_index) if light and light.uv_index else 0.0,
-                'uv_index_is_dangerous': False,
-                'lux': light.lux if light and light.lux else 0,
-                'lux_is_dangerous': False
+                'uv_index': uv if uv is not None else 0.0,
+                'uv_index_is_dangerous': flags['uv_index_is_dangerous'],
+                'lux': lux if lux is not None else 0,
+                'lux_is_dangerous': flags['lux_is_dangerous'],
             },
             'soil': {
-                'moisture_percent': float(soil.moisture_percent) if soil and soil.moisture_percent else 0.0,
-                'moisture_percent_is_dangerous': False
+                'moisture_percent': moisture if moisture is not None else 0.0,
+                'moisture_percent_is_dangerous': flags['moisture_percent_is_dangerous'],
             },
             'air_quality': {
-                'co2_ppm': air_quality.co2_ppm if air_quality and air_quality.co2_ppm else 0,
-                'co2_ppm_is_dangerous': False
+                'co2_ppm': co2 if co2 is not None else 0,
+                'co2_ppm_is_dangerous': flags['co2_ppm_is_dangerous'],
             },
             'precipitation': {
-                'is_raining': precipitation.is_raining if precipitation else False,
-                'is_raining_is_dangerous': False,
-                'rain_detected_last_hour': precipitation.rain_detected_last_hour if precipitation else False,
-                'rain_detected_last_hour_is_dangerous': False
+                'is_raining': is_raining,
+                'is_raining_is_dangerous': flags['is_raining_is_dangerous'],
+                'rain_detected_last_hour': rain_recent,
+                'rain_detected_last_hour_is_dangerous': flags['rain_detected_last_hour_is_dangerous'],
             },
             'trail_activity': {
-                'motion_count': trail_activity.motion_count if trail_activity and trail_activity.motion_count else 0,
-                'motion_count_is_dangerous': False,
-                'period_minutes': trail_activity.period_minutes if trail_activity and trail_activity.period_minutes else 60
-            }
-        }
+                'motion_count': motion,
+                'motion_count_is_dangerous': flags['motion_count_is_dangerous'],
+                'period_minutes': period,
+            },
+        },
     }
 
     return Response(response_data)
@@ -265,3 +301,10 @@ def get_station_data(request, station_id):
 
 def index(request):
     return render(request, 'index.html')
+
+
+from django.contrib.admin.views.decorators import staff_member_required
+
+@staff_member_required
+def sensor_dashboard(request):
+    return render(request, 'admin/dashboard.html')

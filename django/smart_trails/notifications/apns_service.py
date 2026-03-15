@@ -5,14 +5,16 @@ from threading import Lock
 
 
 class APNsService:
+    """Service for sending push notifications via APNs"""
     
     def __init__(self):
         self.client = None
         self._lock = Lock()
     
     async def get_client(self):
+        """Get or create APNs client"""
         if self.client is None:
-
+            # Read key file as bytes
             with open(settings.APNS_KEY_PATH, 'rb') as f:
                 key_data = f.read()
             
@@ -27,10 +29,21 @@ class APNsService:
     
     async def send_notification(self, device_token, bundle_id, title, body, 
                                  data=None, image_url=None, category=None):
+        """
+        Send push notification to a device
         
+        Args:
+            device_token: Device APNs token
+            bundle_id: App bundle identifier
+            title: Notification title
+            body: Notification body
+            data: Additional data payload
+            image_url: URL to image to attach (optional)
+            category: Notification category for actions (optional)
+        """
         client = await self.get_client()
         
-        
+        # Build notification payload
         aps = {
             "alert": {
                 "title": title,
@@ -40,17 +53,14 @@ class APNsService:
             "badge": 1,
         }
         
-        
         if category:
             aps["category"] = category
         
         message = {"aps": aps}
         
-        
         if data:
             message.update(data)
         
-
         if image_url:
             message["image_url"] = image_url
         
@@ -68,15 +78,16 @@ class APNsService:
     
     def send_sync(self, device_token, bundle_id, title, body, data=None, 
                    image_url=None, category=None):
-        
+        """Synchronous wrapper for send_notification"""
         with self._lock:
             try:
+                # Try to get existing event loop
                 loop = asyncio.get_event_loop()
                 if loop.is_closed():
                     loop = asyncio.new_event_loop()
                     asyncio.set_event_loop(loop)
             except RuntimeError:
-                
+                # No event loop in current thread
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
             

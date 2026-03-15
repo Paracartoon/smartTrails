@@ -16,10 +16,11 @@ Including another URLconf
 
 from django.contrib import admin
 from django.urls import path, include
-from api.views import index
+from api.views import index, sensor_dashboard
 
 urlpatterns = [
-    path('', index, name='homepage'), 
+    path('', index, name='homepage'),
+    path('admin/dashboard/', sensor_dashboard, name='sensor_dashboard'),
     path('admin/', admin.site.urls),
     path('api/v1/', include('api.urls')),
     path('api/v1/notifications/', include('notifications.urls')),

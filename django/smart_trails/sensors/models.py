@@ -97,9 +97,6 @@ class LightReading(models.Model):
 
 
 class SoilReading(models.Model):
-    """
-    Soil moisture readings.
-    """
     station = models.ForeignKey(
         'stations.Station',
         related_name='soil_readings',
@@ -134,9 +131,6 @@ class SoilReading(models.Model):
 
 
 class AirQualityReading(models.Model):
-    """
-    CO2 and air quality readings.
-    """
     station = models.ForeignKey(
         'stations.Station',
         related_name='air_quality_readings',
