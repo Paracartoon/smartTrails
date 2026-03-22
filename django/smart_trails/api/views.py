@@ -5,7 +5,7 @@ from django.shortcuts import render
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework import status
-from django.db import transaction
+from django.db import models, transaction
 from django.utils.dateparse import parse_datetime
 from django.utils import timezone
 
@@ -16,9 +16,12 @@ from sensors.models import (
     SoilReading,
     AirQualityReading,
     PrecipitationReading,
-    TrailActivityReading
+    TrailActivityReading,
+    PowerReading,
 )
 from notifications.alert_system import alert_analyzer
+from notifications.models import DeviceToken
+from notifications.apns_service import apns_service
 
 
 @api_view(['POST'])
@@ -128,7 +131,8 @@ def receive_sensor_data(request):
                     station=station,
                     timestamp=timestamp,
                     defaults={
-                        'moisture_percent': soil.get('moisture_percent')
+                        'temperature': soil.get('temperature'),
+                        'moisture_percent': soil.get('moisture_percent'),
                     }
                 )
             
@@ -138,7 +142,9 @@ def receive_sensor_data(request):
                     station=station,
                     timestamp=timestamp,
                     defaults={
-                        'co2_ppm': air.get('co2_ppm')
+                        'co2_ppm': air.get('co2_ppm'),
+                        'tvoc_ppb': air.get('tvoc_ppb'),
+                        'aqi': air.get('aqi'),
                     }
                 )
             
@@ -163,14 +169,61 @@ def receive_sensor_data(request):
                         'period_minutes': activity.get('period_minutes')
                     }
                 )
+
+            power = data.get('power', {})
+            if power and any(v is not None for v in power.values()):
+                PowerReading.objects.update_or_create(
+                    station=station,
+                    timestamp=timestamp,
+                    defaults={
+                        'percentage': power.get('percentage'),
+                        'voltage_mv': power.get('voltage_mv'),
+                        'is_charging': power.get('is_charging'),
+                    }
+                )
         
+        # Run AlertAnalyzer and send push notifications for danger/warning alerts
+        alerts = alert_analyzer.analyze(
+            data=sensors,
+            station_name=station.trail_name or station.name,
+            station_id=station.station_id,
+            timestamp=timestamp,
+        )
+
+        notifications_sent = 0
+        actionable_alerts = [a for a in alerts if a.severity in ('danger', 'warning')]
+
+        if actionable_alerts:
+            # Send the highest-severity alert as a push notification
+            top_alert = alert_analyzer.get_highest_severity_alert(actionable_alerts)
+            devices = DeviceToken.objects.filter(is_active=True).filter(
+                models.Q(station=station) | models.Q(station__isnull=True)
+            )
+
+            for device in devices:
+                success = apns_service.send_sync(
+                    device_token=device.token,
+                    bundle_id=device.bundle_id,
+                    title=top_alert.title,
+                    body=top_alert.body,
+                    data={
+                        'station_id': station.station_id,
+                        'category': top_alert.category,
+                    },
+                    category=top_alert.category,
+                )
+                if success:
+                    notifications_sent += 1
+
         return Response({
             'status': 'success',
             'station_id': station.station_id,
             'timestamp': timestamp.isoformat(),
-            'message': 'Data received and stored successfully'
+            'message': 'Data received and stored successfully',
+            'alerts_triggered': len(actionable_alerts),
+            'notifications_sent': notifications_sent,
         }, status=status.HTTP_201_CREATED)
-        
+
     except Exception as e:
         return Response({
             'status': 'error',
@@ -207,19 +260,23 @@ def get_station_data(request, station_id):
     air_quality = station.air_quality_readings.first()
     precipitation = station.precipitation_readings.first()
     trail_activity = station.trail_activity_readings.first()
+    power = station.power_readings.first()
 
     # Extract raw values
     temp = float(atmospheric.temperature) if atmospheric and atmospheric.temperature else None
     humidity = float(atmospheric.humidity) if atmospheric and atmospheric.humidity else None
     pressure = float(atmospheric.pressure) if atmospheric and atmospheric.pressure else None
     uv = float(light.uv_index) if light and light.uv_index else None
-    lux = light.lux if light and light.lux else None
+    lux = float(light.lux) if light and light.lux else None
+    soil_temp = float(soil.temperature) if soil and soil.temperature else None
     moisture = float(soil.moisture_percent) if soil and soil.moisture_percent else None
     co2 = air_quality.co2_ppm if air_quality and air_quality.co2_ppm else None
+    tvoc = air_quality.tvoc_ppb if air_quality and air_quality.tvoc_ppb else None
+    aqi_val = air_quality.aqi if air_quality and air_quality.aqi else None
     is_raining = precipitation.is_raining if precipitation else False
     rain_recent = precipitation.rain_detected_last_hour if precipitation else False
     motion = trail_activity.motion_count if trail_activity and trail_activity.motion_count else 0
-    period = trail_activity.period_minutes if trail_activity and trail_activity.period_minutes else 60
+    period = trail_activity.period_minutes if trail_activity and trail_activity.period_minutes else 15
 
     # Build sensor data dict for AlertAnalyzer
     sensor_data = {
@@ -275,12 +332,15 @@ def get_station_data(request, station_id):
                 'lux_is_dangerous': flags['lux_is_dangerous'],
             },
             'soil': {
+                'temperature': soil_temp if soil_temp is not None else 0.0,
                 'moisture_percent': moisture if moisture is not None else 0.0,
                 'moisture_percent_is_dangerous': flags['moisture_percent_is_dangerous'],
             },
             'air_quality': {
                 'co2_ppm': co2 if co2 is not None else 0,
                 'co2_ppm_is_dangerous': flags['co2_ppm_is_dangerous'],
+                'tvoc_ppb': tvoc if tvoc is not None else 0,
+                'aqi': aqi_val if aqi_val is not None else 0,
             },
             'precipitation': {
                 'is_raining': is_raining,
@@ -293,6 +353,11 @@ def get_station_data(request, station_id):
                 'motion_count_is_dangerous': flags['motion_count_is_dangerous'],
                 'period_minutes': period,
             },
+        },
+        'power': {
+            'percentage': power.percentage if power else None,
+            'voltage_mv': power.voltage_mv if power else None,
+            'is_charging': power.is_charging if power else None,
         },
     }
 

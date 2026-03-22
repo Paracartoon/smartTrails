@@ -76,7 +76,9 @@ class LightReading(models.Model):
         blank=True,
         help_text="UV index (0-15+)"
     )
-    lux = models.IntegerField(
+    lux = models.DecimalField(
+        max_digits=8,
+        decimal_places=1,
         null=True,
         blank=True,
         help_text="Light intensity in lux"
@@ -108,6 +110,13 @@ class SoilReading(models.Model):
     )
     
     # Sensor values
+    temperature = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Soil temperature in Celsius (DS18B20)"
+    )
     moisture_percent = models.DecimalField(
         max_digits=5,
         decimal_places=2,
@@ -145,7 +154,17 @@ class AirQualityReading(models.Model):
     co2_ppm = models.IntegerField(
         null=True,
         blank=True,
-        help_text="CO2 concentration in parts per million"
+        help_text="CO2 concentration in parts per million (ENS160)"
+    )
+    tvoc_ppb = models.IntegerField(
+        null=True,
+        blank=True,
+        help_text="Total Volatile Organic Compounds in ppb (ENS160)"
+    )
+    aqi = models.IntegerField(
+        null=True,
+        blank=True,
+        help_text="Air Quality Index 1-5 (ENS160)"
     )
     
     class Meta:
@@ -240,3 +259,45 @@ class TrailActivityReading(models.Model):
     
     def __str__(self):
         return f"{self.station.station_id} - {self.timestamp} - {self.motion_count} detections"
+
+
+class PowerReading(models.Model):
+    """Battery and charging status from the station."""
+    station = models.ForeignKey(
+        'stations.Station',
+        related_name='power_readings',
+        on_delete=models.CASCADE
+    )
+    timestamp = models.DateTimeField(
+        db_index=True,
+        help_text="When this reading was taken"
+    )
+
+    percentage = models.IntegerField(
+        null=True,
+        blank=True,
+        help_text="Battery percentage (0-100)"
+    )
+    voltage_mv = models.IntegerField(
+        null=True,
+        blank=True,
+        help_text="Battery voltage in millivolts"
+    )
+    is_charging = models.BooleanField(
+        null=True,
+        blank=True,
+        help_text="Whether the battery is currently charging"
+    )
+
+    class Meta:
+        db_table = 'power_readings'
+        ordering = ['-timestamp']
+        indexes = [
+            models.Index(fields=['station', '-timestamp']),
+        ]
+        unique_together = [['station', 'timestamp']]
+        verbose_name = 'Power Reading'
+        verbose_name_plural = 'Power Readings'
+
+    def __str__(self):
+        return f"{self.station.station_id} - {self.timestamp} - {self.percentage}%"
